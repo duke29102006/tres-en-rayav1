@@ -73,9 +73,9 @@
             <div class="mt-4 rounded-2xl border border-slate-700/60 bg-slate-900/40 p-3 text-left">
                 <h2 class="text-xs font-bold uppercase tracking-wider text-sky-300">Guía rápida de gestos</h2>
                 <ul class="mt-2 space-y-1.5 text-[10px] leading-relaxed text-slate-300 sm:text-xs">
-                    <li><i class="fa-solid fa-hand-point-up mr-2 w-3 text-sky-400" aria-hidden="true"></i>Un dedo: apunta y desliza para seleccionar una casilla; junta pulgar e índice para jugar.</li>
+                    <li><i class="fa-solid fa-hand-point-up mr-2 w-3 text-sky-400" aria-hidden="true"></i>Apunta una casilla y mantenla bajo el anillo hasta que se complete para jugar. Mantén el puntero sobre un botón para pulsarlo; no hace falta pellizcar.</li>
                     <li><i class="fa-solid fa-hand mr-2 w-3 text-indigo-300" aria-hidden="true"></i>Mano abierta: mueve la mano para rotar el cubo.</li>
-                    <li><i class="fa-solid fa-hand-fist mr-2 w-3 text-rose-300" aria-hidden="true"></i>Puño repliega las capas; abre lentamente para expandirlas.</li>
+                    <li><i class="fa-solid fa-hand-fist mr-2 w-3 text-rose-300" aria-hidden="true"></i>Puño repliega las capas; ábrela lentamente para expandir. Señalar nunca cambia la expansión.</li>
                 </ul>
                 <p class="mt-2 text-[10px] text-slate-400">La cámara solo se activa si eliges «Usar gestos» y requiere permiso del navegador.</p>
             </div>
@@ -102,6 +102,9 @@
             <span id="gesture-coordinates" class="gesture-coordinates">Esperando puntos de la mano…</span>
         </div>
     </aside>
+    <div id="gesture-cursor" aria-hidden="true">
+        <span class="gesture-cursor-center"></span>
+    </div>
 
     <!-- HEADER SUPERIOR -->
     <header class="relative z-10 w-full p-3 sm:p-4 flex justify-between items-start pointer-events-none opacity-0 transition-opacity duration-500" id="game-header">

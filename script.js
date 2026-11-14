@@ -201,6 +201,17 @@ function getHandGesture(pose) {
     return null;
 }
 
+function getHandAction(gesture, expansionArmed) {
+    if (gesture === 'fist') return 'collapse';
+    if (gesture === 'point') return 'select';
+    if (gesture === 'open') return expansionArmed ? 'expand' : 'rotate';
+    return expansionArmed ? 'expand-progress' : 'idle';
+}
+
+function getDwellProgress(startedAt, currentTime, duration) {
+    return Math.min(1, Math.max(0, (currentTime - startedAt) / duration));
+}
+
 const PREFERENCES_KEY = 'tres-en-raya.preferences.v1';
 
 function readStoredJson(key, fallback) {
@@ -222,7 +233,16 @@ function saveStoredJson(key, value) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { generateWinningLines, checkWin, getBestMove, getKeyboardMove, getHandPose, getHandGesture };
+    module.exports = {
+        generateWinningLines,
+        checkWin,
+        getBestMove,
+        getKeyboardMove,
+        getHandPose,
+        getHandGesture,
+        getHandAction,
+        getDwellProgress
+    };
 }
 if (typeof document === 'undefined') return;
 
@@ -289,13 +309,20 @@ let gestureCamera = null;
 let gestureHands = null;
 let expansionGestureArmed = false;
 let previousGestureCenter = null;
-let previousPinch = false;
-let lastGestureMoveAt = 0;
 let lastGestureSelection = null;
-let gestureCellSelected = false;
 let candidateHandGesture = null;
 let candidateHandGestureFrames = 0;
 let stableHandGesture = null;
+let gestureDwellTarget = null;
+let gestureDwellStartedAt = 0;
+let gestureDwellFired = false;
+let gestureDwellElement = null;
+let gestureClickCooldownUntil = 0;
+let gestureAwaitingMovement = false;
+let gestureClickPosition = null;
+const gestureCursor = document.getElementById('gesture-cursor');
+const AIR_CELL_DWELL_MS = 1000;
+const AIR_BUTTON_DWELL_MS = 800;
 const HAND_CONNECTIONS = [
     [0, 1], [1, 2], [2, 3], [3, 4],
     [0, 5], [5, 6], [6, 7], [7, 8],
@@ -467,10 +494,10 @@ function createGrid() {
                 mesh.userData = { x, y, z, basePos: { x: posX, y: posY, z: posZ } };
 
                 const edges = new THREE.EdgesGeometry(cellGeometry);
-                const lineMat = new THREE.LineBasicMaterial({ 
-                    color: isDarkMode ? 0x1e293b : 0x94a3b8, 
-                    transparent: true, 
-                    opacity: 0.6 
+                const lineMat = new THREE.LineBasicMaterial({
+                    color: isDarkMode ? 0x475569 : 0x64748b,
+                    transparent: true,
+                    opacity: 0.8
                 });
                 const wireframe = new THREE.LineSegments(edges, lineMat);
                 mesh.add(wireframe);
@@ -535,14 +562,21 @@ function isInteractiveTarget(target) {
 
 function refreshCellAppearance(cell) {
     const { x, y, z } = cell.userData;
-    if (boardState[x][y][z] !== 0) return;
-
-    const selected = gameActive &&
+    const empty = boardState[x][y][z] === 0;
+    const selected = empty && gameActive &&
         keyboardCell.x === x && keyboardCell.y === y && keyboardCell.z === z;
     cell.material.color.setHex(selected
         ? (currentPlayer === 1 ? 0x0284c7 : 0xe11d48)
         : (isDarkMode ? 0x0f172a : 0xe2e8f0));
-    cell.material.opacity = selected ? 0.8 : (isDarkMode ? 0.35 : 0.45);
+    cell.material.opacity = selected ? 0.86 : (empty ? (isDarkMode ? 0.35 : 0.45) : 0.15);
+    cell.material.emissive.setHex(selected ? 0xfacc15 : 0x000000);
+    cell.material.emissiveIntensity = selected ? 0.8 : 0;
+
+    const borderMaterial = cell.children[0]?.material;
+    if (borderMaterial) {
+        borderMaterial.color.setHex(selected ? 0xfef08a : (isDarkMode ? 0x475569 : 0x64748b));
+        borderMaterial.opacity = selected ? 1 : 0.8;
+    }
 }
 
 function updateKeyboardSelection() {
@@ -686,7 +720,7 @@ function makeMove(x, y, z, player) {
     if (!prefersReducedMotion) pieceMesh.scale.setScalar(0.05);
     pieceGroup.add(pieceMesh);
 
-    cell.material.opacity = 0.15;
+    refreshCellAppearance(cell);
     update2DGrid();
 
     const result = checkWin(boardState);
@@ -1338,17 +1372,129 @@ function stopGestureControls() {
     }
     document.getElementById('gesture-panel').classList.add('hidden');
     previousGestureCenter = null;
-    previousPinch = false;
     expansionGestureArmed = false;
-    gestureCellSelected = false;
     lastGestureSelection = null;
+    gestureAwaitingMovement = false;
+    gestureClickPosition = null;
+    hideGestureCursor();
     candidateHandGesture = null;
     candidateHandGestureFrames = 0;
     stableHandGesture = null;
 }
 
 function setGestureStatus(message) {
-    document.getElementById('gesture-status').textContent = message;
+    const status = document.getElementById('gesture-status');
+    if (status.textContent !== message) status.textContent = message;
+}
+
+function resetGestureDwell() {
+    if (gestureDwellElement) gestureDwellElement.classList.remove('gesture-hover-target');
+    gestureDwellTarget = null;
+    gestureDwellStartedAt = 0;
+    gestureDwellFired = false;
+    gestureDwellElement = null;
+    gestureCursor.style.setProperty('--gesture-progress', '0deg');
+}
+
+function hideGestureCursor() {
+    gestureCursor.classList.remove('is-visible');
+    resetGestureDwell();
+}
+
+function updateGestureDwell(target, duration, element = null) {
+    if (gestureDwellTarget !== target) {
+        resetGestureDwell();
+        gestureDwellTarget = target;
+        gestureDwellStartedAt = performance.now();
+        gestureDwellElement = element;
+        gestureDwellElement?.classList.add('gesture-hover-target');
+    }
+
+    const progress = getDwellProgress(gestureDwellStartedAt, performance.now(), duration);
+    gestureCursor.style.setProperty('--gesture-progress', `${progress * 360}deg`);
+    return progress;
+}
+
+function handleGesturePointer(indexTip) {
+    const margin = 24;
+    const screenX = Math.min(window.innerWidth - margin, Math.max(margin, (1 - indexTip.x) * window.innerWidth));
+    const screenY = Math.min(window.innerHeight - margin, Math.max(margin, indexTip.y * window.innerHeight));
+    gestureCursor.style.left = `${screenX}px`;
+    gestureCursor.style.top = `${screenY}px`;
+    gestureCursor.classList.add('is-visible');
+
+    if (gestureAwaitingMovement) {
+        if (Math.hypot(screenX - gestureClickPosition.x, screenY - gestureClickPosition.y) <= 40) {
+            setGestureStatus('Mueve el puntero para realizar otra acción.');
+            return false;
+        }
+        gestureAwaitingMovement = false;
+        gestureClickPosition = null;
+        resetGestureDwell();
+    }
+
+    const target = document.elementFromPoint(screenX, screenY);
+    const button = target?.closest('button:not(:disabled)');
+    if (button && !button.closest('#gesture-panel')) {
+        const label = (button.getAttribute('aria-label') || button.textContent)
+            .trim().replace(/\s+/g, ' ').slice(0, 24);
+        const progress = updateGestureDwell(button, AIR_BUTTON_DWELL_MS, button);
+        if (progress >= 1 && !gestureDwellFired &&
+            performance.now() >= gestureClickCooldownUntil) {
+            gestureDwellFired = true;
+            gestureClickCooldownUntil = performance.now() + 500;
+            gestureAwaitingMovement = true;
+            gestureClickPosition = { x: screenX, y: screenY };
+            button.click();
+            setGestureStatus(`Clic aéreo: ${label}.`);
+        } else if (gestureDwellFired) {
+            setGestureStatus(`Clic aéreo: ${label}.`);
+        } else {
+            setGestureStatus(`Mantén el puntero sobre «${label}» para pulsar.`);
+        }
+        return gestureDwellFired;
+    }
+
+    if (target?.closest('header, footer, aside, #panel-options, #start-overlay')) {
+        resetGestureDwell();
+        setGestureStatus('Apunta a una casilla o a un botón.');
+        return false;
+    }
+
+    if (!gameActive || (gameMode === 'ai' && currentPlayer === -1)) {
+        resetGestureDwell();
+        setGestureStatus(gameActive ? 'Espera el turno de la IA.' : 'Apunta a un botón para continuar.');
+        return false;
+    }
+
+    const cell = selectGestureCell(indexTip);
+    if (!cell) {
+        resetGestureDwell();
+        setGestureStatus('Apunta a una casilla visible.');
+        return false;
+    }
+
+    const { x, y, z } = cell.userData;
+    if (boardState[x][y][z] !== 0) {
+        resetGestureDwell();
+        setGestureStatus('Esa casilla ya está ocupada.');
+        return false;
+    }
+
+    const progress = updateGestureDwell(`cell:${x},${y},${z}`, AIR_CELL_DWELL_MS);
+    if (progress >= 1 && !gestureDwellFired &&
+        performance.now() >= gestureClickCooldownUntil) {
+        gestureDwellFired = true;
+        gestureClickCooldownUntil = performance.now() + 500;
+        gestureAwaitingMovement = true;
+        gestureClickPosition = { x: screenX, y: screenY };
+        makeMove(x, y, z, currentPlayer);
+        setGestureStatus('Ficha colocada.');
+        return true;
+    } else {
+        setGestureStatus(`Casilla ${x + 1}-${y + 1}-${z + 1}: mantén el puntero quieto.`);
+        return false;
+    }
 }
 
 function toggleGesturePreview() {
@@ -1500,13 +1646,12 @@ function handleGestureResults(results) {
     if (!landmarks) {
         drawGestureLandmarks(null);
         previousGestureCenter = null;
-        previousPinch = false;
         expansionGestureArmed = false;
-        gestureCellSelected = false;
         lastGestureSelection = null;
         candidateHandGesture = null;
         candidateHandGestureFrames = 0;
         stableHandGesture = null;
+        hideGestureCursor();
         setGestureStatus('No se detecta una mano. Centra la mano y mejora la iluminación.');
         return;
     }
@@ -1514,68 +1659,53 @@ function handleGestureResults(results) {
     const poseLandmarks = results.multiHandWorldLandmarks?.[0] || landmarks;
     const pose = getHandPose(poseLandmarks);
     const stableGesture = getStableHandGesture(pose);
-    const palmWidth = Math.max(0.001, Math.hypot(
-        poseLandmarks[5].x - poseLandmarks[17].x,
-        poseLandmarks[5].y - poseLandmarks[17].y,
-        poseLandmarks[5].z - poseLandmarks[17].z
-    ));
+    const action = getHandAction(stableGesture, expansionGestureArmed);
     drawGestureLandmarks(landmarks, pose);
     const center = {
         x: (landmarks[0].x + landmarks[5].x + landmarks[9].x + landmarks[13].x + landmarks[17].x) / 5,
         y: (landmarks[0].y + landmarks[5].y + landmarks[9].y + landmarks[13].y + landmarks[17].y) / 5
     };
 
-    if (stableGesture === 'fist') {
+    if (action === 'collapse') {
         expansionGestureArmed = true;
-        previousPinch = false;
         setLayerSpacing(1);
         setGestureStatus('Puño: capas replegadas. Abre la mano para expandirlas.');
-    } else if (expansionGestureArmed) {
+        hideGestureCursor();
+    } else if (action === 'expand') {
         const progress = Math.min(1, Math.max(0, (pose.openness - 0.8) / 1.2));
         setLayerSpacing(1 + progress * 1.8);
-        previousPinch = false;
-        if (stableGesture === 'open') expansionGestureArmed = false;
-        setGestureStatus(progress < 0.05
-            ? 'Abre la mano lentamente para expandir las capas.'
-            : `Expansión ${currentLayerSpacing.toFixed(1)}x · cierra el puño para replegar.`);
-    } else if (stableGesture === 'open') {
-        previousPinch = false;
+        expansionGestureArmed = false;
+        hideGestureCursor();
+        setGestureStatus(`Capas expandidas ${currentLayerSpacing.toFixed(1)}x.`);
+    } else if (action === 'expand-progress') {
+        hideGestureCursor();
+        if (pose.fingersUp >= 2) {
+            const progress = Math.min(1, Math.max(0, (pose.openness - 0.8) / 1.2));
+            setLayerSpacing(1 + progress * 1.8);
+            setGestureStatus(progress < 0.05
+                ? 'Abre más la mano para expandir las capas.'
+                : `Expansión ${currentLayerSpacing.toFixed(1)}x · abre la mano para continuar.`);
+        } else {
+            setGestureStatus('Abre al menos dos dedos para expandir; señalar no cambia las capas.');
+        }
+    } else if (action === 'rotate') {
+        hideGestureCursor();
         if (previousGestureCenter) {
             gridGroup.rotation.y += (previousGestureCenter.x - center.x) * 4;
             gridGroup.rotation.x += (center.y - previousGestureCenter.y) * 4;
         }
         setGestureStatus('Mano abierta: mueve la mano para rotar el cubo.');
-    } else if (stableGesture === 'point') {
-        selectGestureCell(landmarks[8]);
-        const pinch = Math.hypot(
-            poseLandmarks[4].x - poseLandmarks[8].x,
-            poseLandmarks[4].y - poseLandmarks[8].y,
-            poseLandmarks[4].z - poseLandmarks[8].z
-        ) / palmWidth < 0.38;
-        let placedMove = false;
-        if (pinch && !previousPinch && gestureCellSelected &&
-            performance.now() - lastGestureMoveAt > 350 &&
-            gameActive && !(gameMode === 'ai' && currentPlayer === -1)) {
-            makeMove(keyboardCell.x, keyboardCell.y, keyboardCell.z, currentPlayer);
-            gestureCellSelected = false;
-            lastGestureMoveAt = performance.now();
-            placedMove = true;
-        }
-        setGestureStatus(pinch
-            ? (placedMove
-                ? 'Ficha colocada.'
-                : (gestureCellSelected ? 'Pinza detectada: colocando ficha.' : 'Pinza detectada: apunta a una casilla libre.'))
-            : 'Un dedo: desliza para elegir; junta índice y pulgar para jugar.');
-        previousPinch = pinch;
+    } else if (action === 'select') {
+        if (handleGesturePointer(landmarks[8])) expansionGestureArmed = false;
     } else {
-        previousPinch = false;
+        hideGestureCursor();
         setGestureStatus('Mantén el gesto un instante: un dedo, mano abierta o puño.');
     }
-    previousGestureCenter = center;
+    previousGestureCenter = action === 'rotate' ? center : null;
 }
 
 function selectGestureCell(indexTip) {
-    if (!gameActive || (gameMode === 'ai' && currentPlayer === -1)) return;
+    if (!gameActive || isIntroState || (gameMode === 'ai' && currentPlayer === -1)) return null;
     const screenX = (1 - indexTip.x) * window.innerWidth;
     const screenY = indexTip.y * window.innerHeight;
     mouse.x = (screenX / window.innerWidth) * 2 - 1;
@@ -1583,24 +1713,22 @@ function selectGestureCell(indexTip) {
     raycaster.setFromCamera(mouse, camera);
     const hit = raycaster.intersectObjects(cellMeshes)[0]?.object;
     if (!hit) {
-        gestureCellSelected = false;
         lastGestureSelection = null;
-        return;
+        return null;
     }
     const { x, y, z } = hit.userData;
     const key = `${x},${y},${z}`;
     if (boardState[x][y][z] !== 0) {
-        gestureCellSelected = false;
         lastGestureSelection = key;
-        return;
+        return hit;
     }
-    gestureCellSelected = true;
-    if (lastGestureSelection === key) return;
+    if (lastGestureSelection === key) return hit;
     lastGestureSelection = key;
     keyboardCell = { x, y, z };
     activeLayer2D = z;
     updateKeyboardSelection();
     update2DGrid();
+    return hit;
 }
 
 function toggleTheme() {
@@ -1620,9 +1748,6 @@ function toggleTheme() {
 
     cellMeshes.forEach(cell => {
         refreshCellAppearance(cell);
-        if (cell.children[0]) {
-            cell.children[0].material.color.setHex(isDarkMode ? 0x1e293b : 0x94a3b8);
-        }
     });
     preferences.theme = isDarkMode ? 'dark' : 'light';
     saveStoredJson(PREFERENCES_KEY, preferences);
@@ -1847,7 +1972,6 @@ function resetGame() {
     currentPlayer = 1;
     gameActive = true;
     movesPlayed = 0;
-    gestureCellSelected = false;
     lastGestureSelection = null;
     keyboardCell = { x: 1, y: 1, z: activeLayer2D };
 

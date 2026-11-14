@@ -6,7 +6,9 @@ const {
     getBestMove,
     getKeyboardMove,
     getHandPose,
-    getHandGesture
+    getHandGesture,
+    getHandAction,
+    getDwellProgress
 } = require('../script.js');
 
 function emptyBoard() {
@@ -120,6 +122,19 @@ test('clasifica puño, mano abierta, índice y poses intermedias', () => {
     assert.equal(getHandGesture(getHandPose(makeHand())), 'fist');
     assert.equal(getHandGesture(getHandPose(makeHand([0]))), 'point');
     assert.equal(getHandGesture(getHandPose(makeHand([0, 1]))), null);
+});
+
+test('señalar selecciona sin activar expansión y la mano abierta la completa', () => {
+    assert.equal(getHandAction('point', true), 'select');
+    assert.equal(getHandAction('open', true), 'expand');
+    assert.equal(getHandAction('open', false), 'rotate');
+    assert.equal(getHandAction('fist', true), 'collapse');
+});
+
+test('el progreso del clic aéreo se limita al intervalo de permanencia', () => {
+    assert.equal(getDwellProgress(100, 50, 1000), 0);
+    assert.equal(getDwellProgress(100, 600, 1000), 0.5);
+    assert.equal(getDwellProgress(100, 1200, 1000), 1);
 });
 
 test('la IA gana en una jugada cuando tiene una línea abierta', () => {
