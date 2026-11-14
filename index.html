@@ -5,23 +5,157 @@
     <!-- viewport-fit=cover para adaptar barras táctiles y notches de teléfonos -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>3D Tic-Tac-Toe</title>
+    <script>
+        window.appLoading = (() => {
+            const assets = new Set(['tailwind', 'three', 'orbit', 'confetti', 'icons', 'styles', 'hands', 'camera', 'app']);
+            const criticalAssets = new Set(['tailwind', 'three', 'orbit', 'styles', 'app']);
+            const completed = new Set();
+            const failed = new Set();
+            const watched = new WeakSet();
+            let bootFailed = false;
+            let finished = false;
+            let observer;
+
+            function updateProgress(value, message) {
+                const fill = document.getElementById('app-loading-fill');
+                const progress = document.getElementById('app-loading-progress');
+                const status = document.getElementById('app-loading-status');
+                const bar = document.getElementById('app-loading-bar');
+                if (!fill || !progress || !status || !bar) return;
+                fill.style.width = `${value}%`;
+                progress.textContent = `${value}%`;
+                status.textContent = message;
+                bar.setAttribute('aria-valuenow', String(value));
+                bar.setAttribute('aria-valuetext', message);
+            }
+
+            function settleAsset(asset, succeeded) {
+                if (!assets.has(asset) || completed.has(asset)) return;
+                completed.add(asset);
+                if (!succeeded) failed.add(asset);
+                const progress = Math.round(completed.size / assets.size * 94);
+                updateProgress(progress, `Cargando recursos · ${completed.size} de ${assets.size}`);
+            }
+
+            function watchAsset(element) {
+                const asset = element.dataset?.loadAsset;
+                if (!assets.has(asset) || watched.has(element)) return;
+                watched.add(element);
+                element.addEventListener('load', () => settleAsset(asset, true), { once: true });
+                element.addEventListener('error', () => settleAsset(asset, false), { once: true });
+            }
+
+            function showFailure() {
+                const loader = document.getElementById('app-loader');
+                const retry = document.getElementById('app-loading-retry');
+                if (!loader) return;
+                loader.classList.add('has-error');
+                updateProgress(100, 'No se pudo iniciar el juego. Revisa la conexión e inténtalo de nuevo.');
+                if (retry) retry.hidden = false;
+            }
+
+            function finish() {
+                if (finished) return;
+                finished = true;
+                const criticalFailure = [...failed].some(asset => criticalAssets.has(asset));
+                if (bootFailed || criticalFailure) {
+                    showFailure();
+                    return;
+                }
+                updateProgress(100, '¡Listo!');
+                const loader = document.getElementById('app-loader');
+                if (!loader) return;
+                document.body.classList.remove('is-loading');
+                window.setTimeout(() => {
+                    loader.classList.add('is-hidden');
+                    window.setTimeout(() => { loader.hidden = true; }, 500);
+                }, 180);
+            }
+
+            observer = new MutationObserver(records => {
+                for (const record of records) {
+                    for (const node of record.addedNodes) {
+                        if (!(node instanceof Element)) continue;
+                        watchAsset(node);
+                        node.querySelectorAll('[data-load-asset]').forEach(watchAsset);
+                    }
+                }
+            });
+            observer.observe(document.documentElement, { childList: true, subtree: true });
+            window.addEventListener('error', event => {
+                if (event.target === window) bootFailed = true;
+            }, true);
+            document.addEventListener('DOMContentLoaded', () => {
+                document.querySelectorAll('[data-load-asset]').forEach(watchAsset);
+                updateProgress(
+                    Math.round(completed.size / assets.size * 94),
+                    `Cargando recursos · ${completed.size} de ${assets.size}`
+                );
+            }, { once: true });
+            window.addEventListener('load', () => {
+                window.setTimeout(() => {
+                    if (!finished) {
+                        finished = true;
+                        showFailure();
+                    }
+                }, 5000);
+            }, { once: true });
+
+            return { finish };
+        })();
+    </script>
     <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
+    <script data-load-asset="tailwind" src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
             darkMode: 'class',
         }
     </script>
     <!-- Three.js & OrbitControls -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script data-load-asset="three" src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script data-load-asset="orbit" src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <!-- Canvas Confetti -->
-    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <script data-load-asset="confetti" src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
     <!-- FontAwesome -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="styles.css">
+    <link data-load-asset="icons" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link data-load-asset="styles" rel="stylesheet" href="styles.css">
 </head>
-<body class="w-full h-full select-none overflow-hidden relative dark">
+<body class="w-full h-full select-none overflow-hidden relative dark is-home is-loading">
+    <div id="app-loader" role="status" aria-live="polite">
+        <div class="app-loader-content">
+            <div class="loading-cube" aria-hidden="true">
+                <span class="loading-cube-face front"></span>
+                <span class="loading-cube-face back"></span>
+                <span class="loading-cube-face right"></span>
+                <span class="loading-cube-face left"></span>
+                <span class="loading-cube-face top"></span>
+                <span class="loading-cube-face bottom"></span>
+            </div>
+            <div class="loading-dots" aria-hidden="true"><span></span><span></span><span></span></div>
+            <p id="app-loading-status" class="app-loading-status">Preparando el juego...</p>
+            <div id="app-loading-bar" class="app-loading-bar" role="progressbar" aria-label="Carga del juego" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="Preparando el juego">
+                <span id="app-loading-fill" class="app-loading-fill"></span>
+            </div>
+            <div class="app-loading-footer">
+                <span>INICIANDO</span>
+                <span id="app-loading-progress">0%</span>
+            </div>
+            <a id="app-loading-retry" class="app-loading-retry" href="" hidden>Recargar el juego</a>
+        </div>
+    </div>
+    <style>
+        #app-loader {
+            position: fixed;
+            inset: 0;
+            z-index: 200;
+            display: grid;
+            place-items: center;
+            background: #050816;
+            color: #e2e8f0;
+            font-family: system-ui, sans-serif;
+        }
+        #app-loader[hidden] { display: none; }
+    </style>
 
     <!-- CANVAS 3D THREE.JS -->
     <div id="canvas-container" class="absolute inset-0 w-full h-full z-0 cursor-grab active:cursor-grabbing"></div>
@@ -73,7 +207,7 @@
             <div class="mt-4 rounded-2xl border border-slate-700/60 bg-slate-900/40 p-3 text-left">
                 <h2 class="text-xs font-bold uppercase tracking-wider text-sky-300">Guía rápida de gestos</h2>
                 <ul class="mt-2 space-y-1.5 text-[10px] leading-relaxed text-slate-300 sm:text-xs">
-                    <li><i class="fa-solid fa-hand-point-up mr-2 w-3 text-sky-400" aria-hidden="true"></i>Apunta una casilla y mantenla bajo el anillo hasta que se complete para jugar. Mantén el puntero sobre un botón para pulsarlo; no hace falta pellizcar.</li>
+                    <li><i class="fa-solid fa-hand-point-up mr-2 w-3 text-sky-400" aria-hidden="true"></i>Apunta a una casilla y mantén el índice quieto para jugar. Al terminar la partida aparece el puntero: mantenlo sobre un botón para usar el clic aéreo. No hace falta pellizcar.</li>
                     <li><i class="fa-solid fa-hand mr-2 w-3 text-indigo-300" aria-hidden="true"></i>Mano abierta: mueve la mano para rotar el cubo.</li>
                     <li><i class="fa-solid fa-hand-fist mr-2 w-3 text-rose-300" aria-hidden="true"></i>Puño repliega las capas; ábrela lentamente para expandir. Señalar nunca cambia la expansión.</li>
                 </ul>
@@ -288,14 +422,19 @@
             <i class="fa-solid fa-video"></i>
         </button>
 
+        <button id="btn-return-home" type="button" class="glass-panel hover:border-sky-500 text-slate-300 hover:text-sky-400 px-2.5 py-2.5 sm:px-3 sm:py-3 rounded-xl text-xs font-medium transition shadow-lg flex items-center justify-center gap-1.5" aria-label="Volver a la pantalla de inicio" title="Volver a la pantalla de inicio">
+            <i class="fa-solid fa-house" aria-hidden="true"></i>
+            <span class="hidden sm:inline">Inicio</span>
+        </button>
+
         <button id="btn-reset" class="bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white px-3 py-2.5 sm:px-4 sm:py-3 rounded-xl font-bold text-xs shadow-[0_0_15px_rgba(56,189,248,0.4)] transition hover:scale-105 active:scale-95 flex items-center gap-1.5 sm:gap-2">
             <i class="fa-solid fa-rotate-right"></i>
             <span class="text-[11px] sm:text-xs">Nueva Partida</span>
         </button>
     </footer>
 
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1675466862/camera_utils.js" crossorigin="anonymous"></script>
-    <script src="script.js"></script>
+    <script data-load-asset="hands" src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js" crossorigin="anonymous"></script>
+    <script data-load-asset="camera" src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1675466862/camera_utils.js" crossorigin="anonymous"></script>
+    <script data-load-asset="app" src="script.js"></script>
 </body>
 </html>

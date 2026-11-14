@@ -278,6 +278,7 @@ let boardState = Array(3).fill(null).map(() => Array(3).fill(null).map(() => Arr
 
 let currentPlayer = 1;
 let gameActive = false; // Inicia desactivado en la pantalla inicial
+let gameOver = false;
 let isIntroState = true; // Controla la rotación y escala inicial
 let gameMode = ['ai', 'pvp'].includes(preferences.mode) ? preferences.mode : 'ai';
 let aiDifficulty = ['beginner', 'easy', 'medium', 'hard', 'expert'].includes(preferences.difficulty)
@@ -1120,6 +1121,7 @@ function removeLaserLine() {
 
 function handleGameOver(result) {
     gameActive = false;
+    gameOver = true;
     saveGameResult(result);
 
     const statusDot = document.getElementById('status-dot');
@@ -1200,9 +1202,12 @@ function triggerConfetti() {
 // 9. EVENTOS DE INICIO & TRANSICIÓN DE PANTALLAS
 document.getElementById('btn-start-game').addEventListener('click', () => startGame(false));
 document.getElementById('btn-start-gestures').addEventListener('click', () => startGame(true));
+document.getElementById('btn-return-home').addEventListener('click', returnToHome);
 
 function startGame(useGestures = false) {
     gestureModeActive = useGestures;
+    gameOver = false;
+    document.body.classList.remove('is-home');
     if (isBackgroundMusicEnabled() && (!audioContext || audioContext.state !== 'running')) {
         startBackgroundMusic();
     }
@@ -1214,6 +1219,7 @@ function startGame(useGestures = false) {
     renderer.domElement.focus({ preventScroll: true });
 
     const overlay = document.getElementById('start-overlay');
+    overlay.style.display = '';
     overlay.classList.add('opacity-0', 'pointer-events-none');
     setTimeout(() => overlay.style.display = 'none', 700);
 
@@ -1254,8 +1260,37 @@ function startGame(useGestures = false) {
             controls.target.set(0, 0, 0);
         }
     }
-
     requestAnimationFrame(animateTransition);
+}
+
+function returnToHome() {
+    cameraTransitionGeneration++;
+    if (aiMoveTimer !== null) {
+        clearTimeout(aiMoveTimer);
+        aiMoveTimer = null;
+    }
+    stopGestureControls();
+
+    resetGame();
+    gameActive = false;
+    gameOver = false;
+    isIntroState = true;
+    controls.enabled = false;
+    gridGroup.rotation.set(0, 0, 0);
+    gridGroup.scale.set(0.55, 0.55, 0.55);
+    gridGroup.position.y = 1.1;
+    camera.position.set(0, 1.5, 12);
+    controls.target.set(0, 0.5, 0);
+    controls.update();
+    document.body.classList.add('is-home');
+
+    const overlay = document.getElementById('start-overlay');
+    overlay.style.display = '';
+    overlay.classList.remove('opacity-0', 'pointer-events-none');
+    document.getElementById('game-header').classList.add('opacity-0');
+    document.getElementById('game-footer-left').classList.add('opacity-0');
+    document.getElementById('game-footer-right').classList.add('opacity-0');
+    updateKeyboardSelection();
 }
 
 // RESTO DE CONTROLES UI
@@ -1421,7 +1456,7 @@ function handleGesturePointer(indexTip) {
     const screenY = Math.min(window.innerHeight - margin, Math.max(margin, indexTip.y * window.innerHeight));
     gestureCursor.style.left = `${screenX}px`;
     gestureCursor.style.top = `${screenY}px`;
-    gestureCursor.classList.add('is-visible');
+    gestureCursor.classList.toggle('is-visible', gameOver);
 
     if (gestureAwaitingMovement) {
         if (Math.hypot(screenX - gestureClickPosition.x, screenY - gestureClickPosition.y) <= 40) {
@@ -1450,7 +1485,7 @@ function handleGesturePointer(indexTip) {
         } else if (gestureDwellFired) {
             setGestureStatus(`Clic aéreo: ${label}.`);
         } else {
-            setGestureStatus(`Mantén el puntero sobre «${label}» para pulsar.`);
+            setGestureStatus(`Mantén el ${gameOver ? 'puntero' : 'índice'} sobre «${label}» para pulsar.`);
         }
         return gestureDwellFired;
     }
@@ -1492,7 +1527,7 @@ function handleGesturePointer(indexTip) {
         setGestureStatus('Ficha colocada.');
         return true;
     } else {
-        setGestureStatus(`Casilla ${x + 1}-${y + 1}-${z + 1}: mantén el puntero quieto.`);
+        setGestureStatus(`Casilla ${x + 1}-${y + 1}-${z + 1}: mantén el índice quieto.`);
         return false;
     }
 }
@@ -1971,8 +2006,12 @@ function resetGame() {
     boardState = Array(3).fill(null).map(() => Array(3).fill(null).map(() => Array(3).fill(0)));
     currentPlayer = 1;
     gameActive = true;
+    gameOver = false;
     movesPlayed = 0;
     lastGestureSelection = null;
+    gestureAwaitingMovement = false;
+    gestureClickPosition = null;
+    hideGestureCursor();
     keyboardCell = { x: 1, y: 1, z: activeLayer2D };
 
     while (pieceGroup.children.length > 0) {
@@ -1991,6 +2030,8 @@ function resetGame() {
     updateKeyboardSelection();
     update2DGrid();
 }
+
+let firstFrameRendered = false;
 
 function animate() {
     requestAnimationFrame(animate);
@@ -2019,6 +2060,10 @@ function animate() {
     }
 
     renderer.render(scene, camera);
+    if (!firstFrameRendered) {
+        firstFrameRendered = true;
+        window.appLoading.finish();
+    }
 }
 
 window.addEventListener('resize', () => {

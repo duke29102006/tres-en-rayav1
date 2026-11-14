@@ -45,6 +45,166 @@ body:not(.dark) {
     color: #334155;
 }
 
+body.is-home #canvas-container {
+    visibility: hidden;
+}
+
+body.is-home #game-header,
+body.is-home #game-footer-left,
+body.is-home #game-footer-right {
+    visibility: hidden;
+}
+
+#app-loader {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    padding: 1.5rem;
+    background:
+        radial-gradient(ellipse at 50% 44%, rgba(14, 116, 144, 0.22), transparent 44%),
+        radial-gradient(ellipse at 18% 82%, rgba(79, 70, 229, 0.12), transparent 36%),
+        linear-gradient(145deg, #050816 0%, #0b1223 52%, #100c20 100%);
+    color: #e2e8f0;
+    opacity: 1;
+    transition: opacity 450ms ease, visibility 450ms ease;
+}
+
+#app-loader.is-hidden {
+    visibility: hidden;
+    opacity: 0;
+    pointer-events: none;
+}
+
+#app-loader.has-error .app-loading-fill {
+    background: linear-gradient(90deg, #f43f5e, #fb7185);
+}
+
+.app-loader-content {
+    display: flex;
+    width: min(100%, 22rem);
+    flex-direction: column;
+    align-items: center;
+    padding: 2rem 1.5rem 1.5rem;
+    border: 1px solid rgba(56, 189, 248, 0.22);
+    border-radius: 1.5rem;
+    background: rgba(15, 23, 42, 0.62);
+    box-shadow: 0 24px 80px rgba(2, 6, 23, 0.5), 0 0 45px rgba(56, 189, 248, 0.08);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    perspective: 400px;
+}
+
+.loading-cube {
+    position: relative;
+    width: 3rem;
+    height: 3rem;
+    margin: 0 0 0.8rem;
+    transform-style: preserve-3d;
+    animation: loadingCubeSpin 6s linear infinite;
+}
+
+.loading-cube-face {
+    position: absolute;
+    inset: 0;
+    border: 1px solid rgba(125, 211, 252, 0.75);
+    background:
+        linear-gradient(90deg, transparent 32%, rgba(125, 211, 252, 0.7) 33%, transparent 34%, transparent 65%, rgba(125, 211, 252, 0.7) 66%, transparent 67%),
+        linear-gradient(0deg, transparent 32%, rgba(125, 211, 252, 0.7) 33%, transparent 34%, transparent 65%, rgba(125, 211, 252, 0.7) 66%, transparent 67%),
+        linear-gradient(145deg, rgba(56, 189, 248, 0.46), rgba(99, 102, 241, 0.18) 58%, rgba(244, 63, 94, 0.24));
+    box-shadow: inset 0 0 12px rgba(56, 189, 248, 0.22), 0 0 10px rgba(56, 189, 248, 0.14);
+    backface-visibility: visible;
+}
+
+.loading-cube-face.front { transform: translateZ(1.5rem); }
+.loading-cube-face.back { transform: rotateY(180deg) translateZ(1.5rem); }
+.loading-cube-face.right { transform: rotateY(90deg) translateZ(1.5rem); }
+.loading-cube-face.left { transform: rotateY(-90deg) translateZ(1.5rem); }
+.loading-cube-face.top { transform: rotateX(90deg) translateZ(1.5rem); }
+.loading-cube-face.bottom { transform: rotateX(-90deg) translateZ(1.5rem); }
+
+@keyframes loadingCubeSpin {
+    from { transform: rotateX(-24deg) rotateY(0deg) rotateZ(0deg); }
+    to { transform: rotateX(336deg) rotateY(360deg) rotateZ(360deg); }
+}
+
+.loading-dots {
+    display: flex;
+    height: 0.75rem;
+    align-items: center;
+    gap: 0.35rem;
+    margin-bottom: 1.1rem;
+}
+
+.loading-dots span {
+    width: 0.3rem;
+    height: 0.3rem;
+    border-radius: 50%;
+    background: #7dd3fc;
+    box-shadow: 0 0 9px rgba(56, 189, 248, 0.6);
+    animation: loadingDotPulse 1s ease-in-out infinite;
+}
+
+.loading-dots span:nth-child(2) { animation-delay: 150ms; }
+.loading-dots span:nth-child(3) { animation-delay: 300ms; }
+
+@keyframes loadingDotPulse {
+    0%, 60%, 100% { opacity: 0.35; transform: translateY(0); }
+    30% { opacity: 1; transform: translateY(-4px); }
+}
+
+.app-loading-status {
+    min-height: 1.25rem;
+    margin-bottom: 1rem;
+    color: #cbd5e1;
+    font-size: 0.78rem;
+    text-align: center;
+}
+
+.app-loading-bar {
+    width: 100%;
+    height: 0.55rem;
+    overflow: hidden;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 999px;
+    background: rgba(2, 6, 23, 0.8);
+}
+
+.app-loading-fill {
+    display: block;
+    width: 0;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #38bdf8, #818cf8 58%, #f472b6);
+    box-shadow: 0 0 12px rgba(56, 189, 248, 0.5);
+    transition: width 180ms ease-out;
+}
+
+.app-loading-footer {
+    display: flex;
+    width: 100%;
+    justify-content: space-between;
+    margin-top: 0.6rem;
+    color: #94a3b8;
+    font: 700 0.62rem/1.2 ui-monospace, monospace;
+    letter-spacing: 0.12em;
+}
+
+.app-loading-retry {
+    margin-top: 1.25rem;
+    border-radius: 0.7rem;
+    background: #e11d48;
+    padding: 0.65rem 1rem;
+    color: #fff;
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-decoration: none;
+}
+
+.app-loading-retry[hidden] { display: none; }
+
 /* Posicionamiento seguro sobre las barras táctiles de iOS / Android */
 .bottom-mobile {
     bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
