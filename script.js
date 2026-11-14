@@ -194,6 +194,13 @@ function getHandPose(landmarks) {
     };
 }
 
+function getHandGesture(pose) {
+    if (pose.fingersUp === 0) return 'fist';
+    if (pose.fingersUp >= 3) return 'open';
+    if (pose.fingersUp === 1 && pose.indexUp) return 'point';
+    return null;
+}
+
 const PREFERENCES_KEY = 'tres-en-raya.preferences.v1';
 
 function readStoredJson(key, fallback) {
@@ -215,7 +222,7 @@ function saveStoredJson(key, value) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { generateWinningLines, checkWin, getBestMove, getKeyboardMove, getHandPose };
+    module.exports = { generateWinningLines, checkWin, getBestMove, getKeyboardMove, getHandPose, getHandGesture };
 }
 if (typeof document === 'undefined') return;
 
@@ -286,6 +293,9 @@ let previousPinch = false;
 let lastGestureMoveAt = 0;
 let lastGestureSelection = null;
 let gestureCellSelected = false;
+let candidateHandGesture = null;
+let candidateHandGestureFrames = 0;
+let stableHandGesture = null;
 const HAND_CONNECTIONS = [
     [0, 1], [1, 2], [2, 3], [3, 4],
     [0, 5], [5, 6], [6, 7], [7, 8],
@@ -1227,6 +1237,7 @@ document.getElementById('btn-close-options').addEventListener('click', () => {
 });
 
 document.getElementById('btn-stop-gestures').addEventListener('click', stopGestureControls);
+document.getElementById('btn-toggle-gesture-preview').addEventListener('click', toggleGesturePreview);
 
 const panel2D = document.getElementById('panel-2d');
 document.getElementById('btn-toggle-2d').addEventListener('click', () => {
@@ -1331,10 +1342,34 @@ function stopGestureControls() {
     expansionGestureArmed = false;
     gestureCellSelected = false;
     lastGestureSelection = null;
+    candidateHandGesture = null;
+    candidateHandGestureFrames = 0;
+    stableHandGesture = null;
 }
 
 function setGestureStatus(message) {
     document.getElementById('gesture-status').textContent = message;
+}
+
+function toggleGesturePreview() {
+    const panel = document.getElementById('gesture-panel');
+    const button = document.getElementById('btn-toggle-gesture-preview');
+    const expanded = panel.classList.toggle('is-collapsed') === false;
+    button.setAttribute('aria-expanded', String(expanded));
+    button.textContent = expanded ? 'Ocultar cámara' : 'Ver cámara';
+}
+
+function getStableHandGesture(pose) {
+    const candidate = getHandGesture(pose);
+    if (candidate === candidateHandGesture) {
+        candidateHandGestureFrames++;
+    } else {
+        candidateHandGesture = candidate;
+        candidateHandGestureFrames = 1;
+    }
+
+    if (candidateHandGestureFrames >= 3) stableHandGesture = candidate;
+    return stableHandGesture;
 }
 
 function drawGestureLandmarks(landmarks, pose) {
@@ -1405,6 +1440,10 @@ async function startGestureControls() {
     const panel = document.getElementById('gesture-panel');
     const video = document.getElementById('gesture-video');
     panel.classList.remove('hidden');
+    panel.classList.add('is-collapsed');
+    const previewButton = document.getElementById('btn-toggle-gesture-preview');
+    previewButton.setAttribute('aria-expanded', 'false');
+    previewButton.textContent = 'Ver cámara';
     setGestureStatus('Solicitando permiso para la cámara…');
 
     try {
@@ -1432,8 +1471,8 @@ async function startGestureControls() {
         gestureHands.setOptions({
             maxNumHands: 1,
             modelComplexity: 1,
-            minDetectionConfidence: 0.65,
-            minTrackingConfidence: 0.6
+            minDetectionConfidence: 0.55,
+            minTrackingConfidence: 0.55
         });
         gestureHands.onResults(handleGestureResults);
         gestureCamera = new window.Camera(video, {
@@ -1465,16 +1504,20 @@ function handleGestureResults(results) {
         expansionGestureArmed = false;
         gestureCellSelected = false;
         lastGestureSelection = null;
+        candidateHandGesture = null;
+        candidateHandGestureFrames = 0;
+        stableHandGesture = null;
         setGestureStatus('No se detecta una mano. Centra la mano y mejora la iluminación.');
         return;
     }
 
-    const pose = getHandPose(landmarks);
-    const { fingersUp, indexUp, openness } = pose;
+    const poseLandmarks = results.multiHandWorldLandmarks?.[0] || landmarks;
+    const pose = getHandPose(poseLandmarks);
+    const stableGesture = getStableHandGesture(pose);
     const palmWidth = Math.max(0.001, Math.hypot(
-        landmarks[5].x - landmarks[17].x,
-        landmarks[5].y - landmarks[17].y,
-        landmarks[5].z - landmarks[17].z
+        poseLandmarks[5].x - poseLandmarks[17].x,
+        poseLandmarks[5].y - poseLandmarks[17].y,
+        poseLandmarks[5].z - poseLandmarks[17].z
     ));
     drawGestureLandmarks(landmarks, pose);
     const center = {
@@ -1482,32 +1525,32 @@ function handleGestureResults(results) {
         y: (landmarks[0].y + landmarks[5].y + landmarks[9].y + landmarks[13].y + landmarks[17].y) / 5
     };
 
-    if (fingersUp === 0) {
+    if (stableGesture === 'fist') {
         expansionGestureArmed = true;
         previousPinch = false;
-        setGestureStatus('Mano cerrada: ábrela lentamente para expandir las capas.');
+        setLayerSpacing(1);
+        setGestureStatus('Puño: capas replegadas. Abre la mano para expandirlas.');
     } else if (expansionGestureArmed) {
-        if (openness > 1.25) {
-            const expansion = Math.min(2.8, 1 + ((openness - 1.25) / 1.1) * 1.8);
-            spacingSlider.value = String(Math.max(currentLayerSpacing, expansion));
-            spacingSlider.dispatchEvent(new Event('input', { bubbles: true }));
-            setGestureStatus('Abriendo la mano: expandiendo las capas.');
-        }
+        const progress = Math.min(1, Math.max(0, (pose.openness - 0.8) / 1.2));
+        setLayerSpacing(1 + progress * 1.8);
         previousPinch = false;
-        if (fingersUp >= 3) expansionGestureArmed = false;
-    } else if (fingersUp >= 4) {
+        if (stableGesture === 'open') expansionGestureArmed = false;
+        setGestureStatus(progress < 0.05
+            ? 'Abre la mano lentamente para expandir las capas.'
+            : `Expansión ${currentLayerSpacing.toFixed(1)}x · cierra el puño para replegar.`);
+    } else if (stableGesture === 'open') {
         previousPinch = false;
         if (previousGestureCenter) {
             gridGroup.rotation.y += (previousGestureCenter.x - center.x) * 4;
             gridGroup.rotation.x += (center.y - previousGestureCenter.y) * 4;
         }
         setGestureStatus('Mano abierta: mueve la mano para rotar el cubo.');
-    } else if (fingersUp === 1 && indexUp) {
+    } else if (stableGesture === 'point') {
         selectGestureCell(landmarks[8]);
         const pinch = Math.hypot(
-            landmarks[4].x - landmarks[8].x,
-            landmarks[4].y - landmarks[8].y,
-            landmarks[4].z - landmarks[8].z
+            poseLandmarks[4].x - poseLandmarks[8].x,
+            poseLandmarks[4].y - poseLandmarks[8].y,
+            poseLandmarks[4].z - poseLandmarks[8].z
         ) / palmWidth < 0.38;
         let placedMove = false;
         if (pinch && !previousPinch && gestureCellSelected &&
@@ -1526,7 +1569,7 @@ function handleGestureResults(results) {
         previousPinch = pinch;
     } else {
         previousPinch = false;
-        setGestureStatus('Muestra un dedo, una mano abierta o cierra la mano para empezar.');
+        setGestureStatus('Mantén el gesto un instante: un dedo, mano abierta o puño.');
     }
     previousGestureCenter = center;
 }
@@ -1639,6 +1682,16 @@ spacingSlider.addEventListener('input', (e) => {
     if (result?.line) drawLaserWinLine(result.line);
     else removeLaserLine();
 });
+
+function setLayerSpacing(value) {
+    const clamped = Math.min(2.8, Math.max(1, value));
+    const snapped = Math.round(clamped / 0.05) * 0.05;
+    if (Math.abs(snapped - currentLayerSpacing) < 0.001) return;
+    spacingSlider.value = snapped.toFixed(2);
+    spacingSlider.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+document.getElementById('btn-reset-spacing').addEventListener('click', () => setLayerSpacing(1));
 
 document.getElementById('select-mode').addEventListener('change', (e) => {
     const nextMode = e.target.value;

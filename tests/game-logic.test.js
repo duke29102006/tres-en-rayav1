@@ -1,6 +1,13 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { checkWin, generateWinningLines, getBestMove, getKeyboardMove, getHandPose } = require('../script.js');
+const {
+    checkWin,
+    generateWinningLines,
+    getBestMove,
+    getKeyboardMove,
+    getHandPose,
+    getHandGesture
+} = require('../script.js');
 
 function emptyBoard() {
     return Array.from({ length: 3 }, () =>
@@ -88,15 +95,13 @@ test('las flechas verticales siguen la dirección visual y Q/E cambian de capa',
 });
 
 test('clasifica mano abierta, puño e índice extendido usando distancias 3D', () => {
-    assert.deepEqual(
-        { fingersUp: getHandPose(makeHand([0, 1, 2, 3])).fingersUp, indexUp: getHandPose(makeHand([0, 1, 2, 3])).indexUp },
-        { fingersUp: 4, indexUp: true }
-    );
+    const openHand = getHandPose(makeHand([0, 1, 2, 3]));
+    assert.equal(openHand.fingersUp, 4);
+    assert.equal(openHand.indexUp, true);
     assert.equal(getHandPose(makeHand()).fingersUp, 0);
-    assert.deepEqual(
-        { fingersUp: getHandPose(makeHand([0])).fingersUp, indexUp: getHandPose(makeHand([0])).indexUp },
-        { fingersUp: 1, indexUp: true }
-    );
+    const pointingHand = getHandPose(makeHand([0]));
+    assert.equal(pointingHand.fingersUp, 1);
+    assert.equal(pointingHand.indexUp, true);
 });
 
 test('la detección de dedos extendidos no depende de la orientación de la mano', () => {
@@ -108,6 +113,13 @@ test('la detección de dedos extendidos no depende de la orientación de la mano
     }));
 
     assert.equal(getHandPose(rotatedHand).fingersUp, 4);
+});
+
+test('clasifica puño, mano abierta, índice y poses intermedias', () => {
+    assert.equal(getHandGesture(getHandPose(makeHand([0, 1, 2, 3]))), 'open');
+    assert.equal(getHandGesture(getHandPose(makeHand())), 'fist');
+    assert.equal(getHandGesture(getHandPose(makeHand([0]))), 'point');
+    assert.equal(getHandGesture(getHandPose(makeHand([0, 1]))), null);
 });
 
 test('la IA gana en una jugada cuando tiene una línea abierta', () => {

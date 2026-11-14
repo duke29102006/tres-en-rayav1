@@ -75,7 +75,7 @@
                 <ul class="mt-2 space-y-1.5 text-[10px] leading-relaxed text-slate-300 sm:text-xs">
                     <li><i class="fa-solid fa-hand-point-up mr-2 w-3 text-sky-400" aria-hidden="true"></i>Un dedo: apunta y desliza para seleccionar una casilla; junta pulgar e índice para jugar.</li>
                     <li><i class="fa-solid fa-hand mr-2 w-3 text-indigo-300" aria-hidden="true"></i>Mano abierta: mueve la mano para rotar el cubo.</li>
-                    <li><i class="fa-solid fa-hand-fist mr-2 w-3 text-rose-300" aria-hidden="true"></i>Cierra y abre la mano lentamente para expandir las capas.</li>
+                    <li><i class="fa-solid fa-hand-fist mr-2 w-3 text-rose-300" aria-hidden="true"></i>Puño repliega las capas; abre lentamente para expandirlas.</li>
                 </ul>
                 <p class="mt-2 text-[10px] text-slate-400">La cámara solo se activa si eliges «Usar gestos» y requiere permiso del navegador.</p>
             </div>
@@ -89,6 +89,9 @@
                 <p class="text-[10px] font-bold uppercase tracking-wider text-sky-300">Control por gestos</p>
                 <p id="gesture-status" class="mt-1 text-xs text-slate-200">Iniciando cámara…</p>
             </div>
+            <button id="btn-toggle-gesture-preview" type="button" class="rounded-lg px-2 py-1 text-[10px] font-bold text-sky-300 hover:bg-slate-700" aria-expanded="false">
+                Ver cámara
+            </button>
             <button id="btn-stop-gestures" type="button" class="rounded-lg p-2 text-slate-300 hover:bg-slate-700" aria-label="Desactivar cámara" title="Desactivar cámara">
                 <i class="fa-solid fa-video-slash" aria-hidden="true"></i>
             </button>
@@ -222,6 +225,9 @@
                         <span id="spacing-value" class="text-xs font-mono text-sky-400 font-bold">1.0x</span>
                     </div>
                     <input id="layer-spacing-slider" type="range" min="1" max="2.8" step="0.05" value="1.0" class="w-full">
+                    <button id="btn-reset-spacing" type="button" class="self-end rounded-lg px-2 py-1 text-[10px] font-bold text-sky-300 transition hover:bg-slate-800">
+                        Restablecer capas
+                    </button>
                 </div>
 
                 <div id="panel-metrics" class="flex flex-col gap-1.5 bg-slate-900/60 p-2.5 rounded-xl border border-slate-800">

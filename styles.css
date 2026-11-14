@@ -94,10 +94,20 @@ body:not(.dark) .glass-panel-accent {
     flex-direction: column;
     align-items: stretch;
     gap: 0.5rem;
-    width: min(32rem, calc(100vw - 1.5rem));
+    width: min(19rem, calc(100vw - 1.5rem));
+    max-height: min(65vh, 36rem);
     padding: 0.75rem;
     border-color: rgba(56, 189, 248, 0.4);
+    overflow-y: auto;
     pointer-events: auto;
+}
+
+.gesture-panel:not(.is-collapsed) {
+    width: min(26rem, calc(100vw - 1.5rem));
+}
+
+.gesture-panel.is-collapsed .gesture-camera-view {
+    display: none;
 }
 
 .gesture-panel-header {
@@ -153,8 +163,8 @@ body:not(.dark) .glass-panel-accent {
 }
 
 @media (max-height: 520px) {
-    .gesture-panel {
-        width: min(24rem, calc(100vw - 1.5rem));
+    .gesture-panel:not(.is-collapsed) {
+        width: min(20rem, calc(100vw - 1.5rem));
     }
 
     .gesture-camera-view {
