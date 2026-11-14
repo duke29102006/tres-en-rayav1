@@ -172,6 +172,28 @@ function getKeyboardMove(key) {
     return directions[key] || directions[key.toLowerCase()] || null;
 }
 
+function getHandPose(landmarks) {
+    const distance = (first, second) => Math.hypot(
+        first.x - second.x,
+        first.y - second.y,
+        first.z - second.z
+    );
+    const wrist = landmarks[0];
+    const palmWidth = Math.max(0.001, distance(landmarks[5], landmarks[17]));
+    const fingerPairs = [[8, 6], [12, 10], [16, 14], [20, 18]];
+    const extendedFingers = fingerPairs.map(([tip, joint]) =>
+        distance(landmarks[tip], wrist) > distance(landmarks[joint], wrist) * 1.12
+    );
+    const openness = fingerPairs.reduce((sum, [tip]) =>
+        sum + distance(landmarks[tip], wrist), 0) / fingerPairs.length / palmWidth;
+
+    return {
+        fingersUp: extendedFingers.filter(Boolean).length,
+        indexUp: extendedFingers[0],
+        openness
+    };
+}
+
 const PREFERENCES_KEY = 'tres-en-raya.preferences.v1';
 
 function readStoredJson(key, fallback) {
@@ -193,7 +215,7 @@ function saveStoredJson(key, value) {
 }
 
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { generateWinningLines, checkWin, getBestMove, getKeyboardMove };
+    module.exports = { generateWinningLines, checkWin, getBestMove, getKeyboardMove, getHandPose };
 }
 if (typeof document === 'undefined') return;
 
@@ -264,6 +286,13 @@ let previousPinch = false;
 let lastGestureMoveAt = 0;
 let lastGestureSelection = null;
 let gestureCellSelected = false;
+const HAND_CONNECTIONS = [
+    [0, 1], [1, 2], [2, 3], [3, 4],
+    [0, 5], [5, 6], [6, 7], [7, 8],
+    [5, 9], [9, 10], [10, 11], [11, 12],
+    [9, 13], [13, 14], [14, 15], [15, 16],
+    [13, 17], [17, 18], [18, 19], [19, 20], [0, 17]
+];
 
 function updateBackendStatus(connected, message) {
     const indicator = document.getElementById('backend-status');
@@ -1308,6 +1337,70 @@ function setGestureStatus(message) {
     document.getElementById('gesture-status').textContent = message;
 }
 
+function drawGestureLandmarks(landmarks, pose) {
+    const canvas = document.getElementById('gesture-landmarks');
+    const context = canvas.getContext('2d');
+    context.clearRect(0, 0, canvas.width, canvas.height);
+
+    const coordinates = document.getElementById('gesture-coordinates');
+    if (!landmarks) {
+        coordinates.textContent = 'Esperando puntos de la mano…';
+        return;
+    }
+
+    const video = document.getElementById('gesture-video');
+    const viewRatio = canvas.width / canvas.height;
+    const videoRatio = video.videoWidth && video.videoHeight
+        ? video.videoWidth / video.videoHeight
+        : viewRatio;
+    let displayedWidth = 1;
+    let displayedHeight = 1;
+    let offsetX = 0;
+    let offsetY = 0;
+    if (videoRatio > viewRatio) {
+        displayedHeight = viewRatio / videoRatio;
+        offsetY = (1 - displayedHeight) / 2;
+    } else {
+        displayedWidth = videoRatio / viewRatio;
+        offsetX = (1 - displayedWidth) / 2;
+    }
+
+    const point = landmark => ({
+        x: (offsetX + (1 - landmark.x) * displayedWidth) * canvas.width,
+        y: (offsetY + landmark.y * displayedHeight) * canvas.height
+    });
+
+    context.lineWidth = 5;
+    context.lineCap = 'round';
+    context.strokeStyle = 'rgba(34, 211, 238, 0.9)';
+    for (const [start, end] of HAND_CONNECTIONS) {
+        const first = point(landmarks[start]);
+        const second = point(landmarks[end]);
+        context.beginPath();
+        context.moveTo(first.x, first.y);
+        context.lineTo(second.x, second.y);
+        context.stroke();
+    }
+
+    landmarks.forEach((landmark, index) => {
+        const position = point(landmark);
+        context.beginPath();
+        context.arc(position.x, position.y, index === 8 ? 11 : 7, 0, Math.PI * 2);
+        context.fillStyle = index === 8 ? '#facc15' : '#f8fafc';
+        context.fill();
+        context.lineWidth = 2;
+        context.strokeStyle = '#0e7490';
+        context.stroke();
+    });
+
+    const indexTip = point(landmarks[8]);
+    context.font = 'bold 18px sans-serif';
+    context.fillStyle = '#facc15';
+    context.fillText('8', indexTip.x + 12, indexTip.y - 10);
+    coordinates.textContent =
+        `Índice x ${(1 - landmarks[8].x).toFixed(2)} · y ${landmarks[8].y.toFixed(2)} · apertura ${pose.openness.toFixed(2)}`;
+}
+
 async function startGestureControls() {
     const panel = document.getElementById('gesture-panel');
     const video = document.getElementById('gesture-video');
@@ -1366,23 +1459,24 @@ function handleGestureResults(results) {
     if (!gestureModeActive) return;
     const landmarks = results.multiHandLandmarks?.[0];
     if (!landmarks) {
+        drawGestureLandmarks(null);
         previousGestureCenter = null;
         previousPinch = false;
-        setGestureStatus('No se detecta una mano.');
+        expansionGestureArmed = false;
+        gestureCellSelected = false;
+        lastGestureSelection = null;
+        setGestureStatus('No se detecta una mano. Centra la mano y mejora la iluminación.');
         return;
     }
 
-    const wrist = landmarks[0];
-    const palmWidth = Math.max(0.001, Math.hypot(landmarks[5].x - landmarks[17].x, landmarks[5].y - landmarks[17].y));
-    const indexUp = landmarks[8].y < landmarks[6].y;
-    const fingersUp = [
-        indexUp,
-        landmarks[12].y < landmarks[10].y,
-        landmarks[16].y < landmarks[14].y,
-        landmarks[20].y < landmarks[18].y
-    ].filter(Boolean).length;
-    const openness = [8, 12, 16, 20].reduce((sum, index) =>
-        sum + Math.hypot(landmarks[index].x - wrist.x, landmarks[index].y - wrist.y), 0) / 4 / palmWidth;
+    const pose = getHandPose(landmarks);
+    const { fingersUp, indexUp, openness } = pose;
+    const palmWidth = Math.max(0.001, Math.hypot(
+        landmarks[5].x - landmarks[17].x,
+        landmarks[5].y - landmarks[17].y,
+        landmarks[5].z - landmarks[17].z
+    ));
+    drawGestureLandmarks(landmarks, pose);
     const center = {
         x: (landmarks[0].x + landmarks[5].x + landmarks[9].x + landmarks[13].x + landmarks[17].x) / 5,
         y: (landmarks[0].y + landmarks[5].y + landmarks[9].y + landmarks[13].y + landmarks[17].y) / 5
@@ -1410,15 +1504,25 @@ function handleGestureResults(results) {
         setGestureStatus('Mano abierta: mueve la mano para rotar el cubo.');
     } else if (fingersUp === 1 && indexUp) {
         selectGestureCell(landmarks[8]);
-        const pinch = Math.hypot(landmarks[4].x - landmarks[8].x, landmarks[4].y - landmarks[8].y) / palmWidth < 0.32;
+        const pinch = Math.hypot(
+            landmarks[4].x - landmarks[8].x,
+            landmarks[4].y - landmarks[8].y,
+            landmarks[4].z - landmarks[8].z
+        ) / palmWidth < 0.38;
+        let placedMove = false;
         if (pinch && !previousPinch && gestureCellSelected &&
             performance.now() - lastGestureMoveAt > 350 &&
             gameActive && !(gameMode === 'ai' && currentPlayer === -1)) {
             makeMove(keyboardCell.x, keyboardCell.y, keyboardCell.z, currentPlayer);
             gestureCellSelected = false;
             lastGestureMoveAt = performance.now();
+            placedMove = true;
         }
-        setGestureStatus(pinch ? 'Pinza detectada: selecciona una casilla con un dedo.' : 'Un dedo: desliza para elegir; junta índice y pulgar para jugar.');
+        setGestureStatus(pinch
+            ? (placedMove
+                ? 'Ficha colocada.'
+                : (gestureCellSelected ? 'Pinza detectada: colocando ficha.' : 'Pinza detectada: apunta a una casilla libre.'))
+            : 'Un dedo: desliza para elegir; junta índice y pulgar para jugar.');
         previousPinch = pinch;
     } else {
         previousPinch = false;

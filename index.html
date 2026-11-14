@@ -84,14 +84,20 @@
     </div>
 
     <aside id="gesture-panel" class="gesture-panel glass-panel hidden" aria-live="polite">
-        <video id="gesture-video" autoplay muted playsinline></video>
-        <div class="min-w-0">
-            <p class="text-[10px] font-bold uppercase tracking-wider text-sky-300">Control por gestos</p>
-            <p id="gesture-status" class="mt-1 text-xs text-slate-200">Iniciando cámara…</p>
+        <div class="gesture-panel-header">
+            <div class="min-w-0">
+                <p class="text-[10px] font-bold uppercase tracking-wider text-sky-300">Control por gestos</p>
+                <p id="gesture-status" class="mt-1 text-xs text-slate-200">Iniciando cámara…</p>
+            </div>
+            <button id="btn-stop-gestures" type="button" class="rounded-lg p-2 text-slate-300 hover:bg-slate-700" aria-label="Desactivar cámara" title="Desactivar cámara">
+                <i class="fa-solid fa-video-slash" aria-hidden="true"></i>
+            </button>
         </div>
-        <button id="btn-stop-gestures" type="button" class="ml-auto rounded-lg p-2 text-slate-300 hover:bg-slate-700" aria-label="Desactivar cámara" title="Desactivar cámara">
-            <i class="fa-solid fa-video-slash" aria-hidden="true"></i>
-        </button>
+        <div class="gesture-camera-view">
+            <video id="gesture-video" autoplay muted playsinline></video>
+            <canvas id="gesture-landmarks" width="640" height="480" aria-label="Puntos de seguimiento de la mano"></canvas>
+            <span id="gesture-coordinates" class="gesture-coordinates">Esperando puntos de la mano…</span>
+        </div>
     </aside>
 
     <!-- HEADER SUPERIOR -->

@@ -1,11 +1,26 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { checkWin, generateWinningLines, getBestMove, getKeyboardMove } = require('../script.js');
+const { checkWin, generateWinningLines, getBestMove, getKeyboardMove, getHandPose } = require('../script.js');
 
 function emptyBoard() {
     return Array.from({ length: 3 }, () =>
         Array.from({ length: 3 }, () => Array(3).fill(0))
     );
+}
+
+function makeHand(extendedFingers = []) {
+    const landmarks = Array.from({ length: 21 }, () => ({ x: 0.5, y: 0.6, z: 0 }));
+    landmarks[0] = { x: 0.5, y: 0.85, z: 0 };
+    landmarks[5] = { x: 0.35, y: 0.62, z: 0 };
+    landmarks[17] = { x: 0.65, y: 0.62, z: 0 };
+
+    [[6, 8], [10, 12], [14, 16], [18, 20]].forEach(([joint, tip], index) => {
+        const x = 0.35 + index * 0.1;
+        landmarks[joint] = { x, y: 0.6, z: 0 };
+        landmarks[tip] = { x, y: extendedFingers.includes(index) ? 0.2 : 0.7, z: 0 };
+    });
+
+    return landmarks;
 }
 
 test('genera las 49 líneas rectas únicas del tablero 3D', () => {
@@ -70,6 +85,29 @@ test('las flechas verticales siguen la dirección visual y Q/E cambian de capa',
     assert.deepEqual(getKeyboardMove('q'), [0, 0, -1]);
     assert.deepEqual(getKeyboardMove('E'), [0, 0, 1]);
     assert.equal(getKeyboardMove('PageUp'), null);
+});
+
+test('clasifica mano abierta, puño e índice extendido usando distancias 3D', () => {
+    assert.deepEqual(
+        { fingersUp: getHandPose(makeHand([0, 1, 2, 3])).fingersUp, indexUp: getHandPose(makeHand([0, 1, 2, 3])).indexUp },
+        { fingersUp: 4, indexUp: true }
+    );
+    assert.equal(getHandPose(makeHand()).fingersUp, 0);
+    assert.deepEqual(
+        { fingersUp: getHandPose(makeHand([0])).fingersUp, indexUp: getHandPose(makeHand([0])).indexUp },
+        { fingersUp: 1, indexUp: true }
+    );
+});
+
+test('la detección de dedos extendidos no depende de la orientación de la mano', () => {
+    const wrist = makeHand([0, 1, 2, 3])[0];
+    const rotatedHand = makeHand([0, 1, 2, 3]).map(point => ({
+        ...point,
+        x: wrist.x - (point.y - wrist.y),
+        y: wrist.y + (point.x - wrist.x)
+    }));
+
+    assert.equal(getHandPose(rotatedHand).fingersUp, 4);
 });
 
 test('la IA gana en una jugada cuando tiene una línea abierta', () => {
